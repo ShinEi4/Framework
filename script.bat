@@ -45,3 +45,9 @@ jar cvf app.jar -C "%destinationDirectory%" .
 
 echo Fichier JAR créé avec succès : app.jar
 
+rem Copier le fichier JAR vers le répertoire WEB-INF/lib
+echo Copie du fichier JAR vers le répertoire WEB-INF/lib...
+copy /Y "app.jar" "E:\S4\Web Dynamique\ProjetSrpint\Test\WEB-INF\lib\"
+
+echo Fichier JAR copié avec succès dans le répertoire WEB-INF/lib.
+pause
