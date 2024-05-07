@@ -1,7 +1,6 @@
 package mg.ituprom16;
 
 import jakarta.servlet.http.*;
-import jakarta.servlet.*;
 
 import java.io.IOException;
 import java.io.PrintWriter;
