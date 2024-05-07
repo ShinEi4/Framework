@@ -27,7 +27,7 @@ public class FrontController extends HttpServlet{
     public void processRequest(HttpServletRequest request,HttpServletResponse response) throws Exception
     {
         response.setContentType("text/html");
-        PrintWriter out=response.getWritter();
+        PrintWriter out=response.getWriter();
         out.println("<html>");
         out.println("<head><title>Print URL</title></head>");
         out.println("<body>");
