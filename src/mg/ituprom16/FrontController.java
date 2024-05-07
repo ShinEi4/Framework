@@ -1,4 +1,4 @@
-package mg.ituprom16;
+package src.mg.ituprom16;
 
 import jakarta.servlet.http.*;
 
