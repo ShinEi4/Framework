@@ -56,5 +56,6 @@ echo Copie du fichier JAR vers le répertoire WEB-INF/lib...
 copy /Y "app.jar" "E:\S4\Web Dynamique\ProjetSrpint\Test\lib\"
 
 echo Fichier JAR copié avec succès dans le répertoire WEB-INF/lib.
+echo true
 
 pause
