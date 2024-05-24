@@ -112,7 +112,7 @@ public class FrontController extends HttpServlet{
         } catch (Exception e) {
             out.println(e.getMessage());
             for (StackTraceElement ste : e.getStackTrace()) {
-                out.println(ste)
+                out.println(ste);
             }
         }
     }
