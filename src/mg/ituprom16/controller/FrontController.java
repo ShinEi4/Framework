@@ -51,7 +51,6 @@ public class FrontController extends HttpServlet{
             }
         }
     }
-
     @Override
     public void init() throws ServletException {
         super.init();
@@ -73,6 +72,8 @@ public class FrontController extends HttpServlet{
 
         Mapping mapping = urlMappings.get(urlPath);
         PrintWriter out = resp.getWriter();
+
+        
         try {
                // Afficher le contenu du HashMap urlMappings
                out.println("Contenu de urlMappings:");
@@ -108,7 +109,7 @@ public class FrontController extends HttpServlet{
                     out.println("<h1>No method associated with this URL path: " + urlPath + "</h1>");
                     out.println("</body>");
                     out.println("</html>");
-                }            
+                } 
         } catch (Exception e) {
             out.println(e.getMessage());
             for (StackTraceElement ste : e.getStackTrace()) {
