@@ -72,17 +72,17 @@ public class FrontController extends HttpServlet{
 
         Mapping mapping = urlMappings.get(urlPath);
         PrintWriter out = resp.getWriter();
+        
+        Class<?> clazz = Class.forName(mapping.getClassName());
+        // Créer une instance de la classe
+        Object instance = clazz.getDeclaredConstructor().newInstance();
+        // Obtenir la méthode
+        Method method = clazz.getDeclaredMethod(mapping.getMethodName());
+        // Exécuter la méthode et obtenir le résultat
+        String result = (String) method.invoke(instance);
 
         
         try {
-               // Afficher le contenu du HashMap urlMappings
-               out.println("Contenu de urlMappings:");
-               for (HashMap.Entry<String, Mapping> entry : urlMappings.entrySet()) {
-                   String url = entry.getKey();
-                   Mapping mapping2 = entry.getValue();
-                   out.println("URL: " + url + " - Class: " + mapping2.getClassName() + ", Method: " + mapping2.getMethodName());
-               }
-
                 getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
                 resp.setContentType("text/html;charset=UTF-8");
                 if (mapping != null) {
@@ -96,6 +96,7 @@ public class FrontController extends HttpServlet{
                     out.println("<ul>");
                     out.println("<li>Class Name: " + mapping.getClassName() + "</li>");
                     out.println("<li>Method Name: " + mapping.getMethodName() + "</li>");
+                    out.println("<li>Method Name: " + result + "</li>");
                     out.println("</ul>");
                     out.println("</body>");
                     out.println("</html>");
@@ -110,13 +111,6 @@ public class FrontController extends HttpServlet{
                     out.println("</body>");
                     out.println("</html>");
                 }
-                Class<?> clazz = Class.forName(mapping.getClassName());
-                // Créer une instance de la classe
-                Object instance = clazz.getDeclaredConstructor().newInstance();
-                // Obtenir la méthode
-                Method method = clazz.getDeclaredMethod(mapping.getMethodName());
-                // Exécuter la méthode et obtenir le résultat
-                String result = (String) method.invoke(instance);
         } catch (Exception e) {
             out.println(e.getMessage());
             for (StackTraceElement ste : e.getStackTrace()) {
