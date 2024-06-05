@@ -1,21 +1,30 @@
 package mg.ituprom16.controller;
 
+import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import mg.ituprom16.Mapping;
+import mg.ituprom16.ModelView;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.lang.ModuleLayer.Controller;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Objects;
 
-import jakarta.servlet.*;
-public class FrontController extends HttpServlet{
-    
+public class FrontController extends HttpServlet {
+
+    private HashMap<String, Mapping> urlMappings = new HashMap<>();
+
+    @Override
+    public void init() throws ServletException {
+        super.init();
+        try {
+            getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         processRequest(req, resp);
@@ -26,10 +35,7 @@ public class FrontController extends HttpServlet{
         processRequest(req, resp);
     }
 
-    private HashMap<String, Mapping> urlMappings = new HashMap<>();
-    protected ArrayList<String> listeControlleurs = new ArrayList<String>();
-
-    public void getListeControlleurs(String packagename) throws Exception {
+    private void getListeControlleurs(String packagename) throws Exception {
         String bin_path = "WEB-INF/classes/" + packagename.replace(".", "/");
         bin_path = getServletContext().getRealPath(bin_path);
 
@@ -51,72 +57,48 @@ public class FrontController extends HttpServlet{
             }
         }
     }
-    @Override
-    public void init() throws ServletException {
-        super.init();
-        try {
-            getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
-    protected void processRequest(HttpServletRequest req, HttpServletResponse resp)
-    throws ServletException, IOException {
-        String contextPath = req.getContextPath(); // Obtenir le contexte de l'application
-        String urlPath = req.getRequestURI().substring(contextPath.length()); // Enlever le contexte de l'application        
+    protected void processRequest(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        String contextPath = req.getContextPath();
+        String urlPath = req.getRequestURI().substring(contextPath.length());
+
         if (urlPath == null || urlPath.isEmpty()) {
-            resp.getWriter().println("No URL path provided");
+            resp.getWriter().println("Aucun url trouve");
             return;
         }
 
         Mapping mapping = urlMappings.get(urlPath);
-        PrintWriter out = resp.getWriter();
-        
-        Class<?> clazz = Class.forName(mapping.getClassName());
-        // Créer une instance de la classe
-        Object instance = clazz.getDeclaredConstructor().newInstance();
-        // Obtenir la méthode
-        Method method = clazz.getDeclaredMethod(mapping.getMethodName());
-        // Exécuter la méthode et obtenir le résultat
-        String result = (String) method.invoke(instance);
+        if (mapping == null) {
+            resp.getWriter().println("Aucun mapping pour l'url actuel: " + urlPath);
+            return;
+        }
 
-        
         try {
-                getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
-                resp.setContentType("text/html;charset=UTF-8");
-                if (mapping != null) {
-                    out.println("<!DOCTYPE html>");
-                    out.println("<html>");
-                    out.println("<head>");
-                    out.println("<title>Mapping Information</title>");
-                    out.println("</head>");
-                    out.println("<body>");
-                    out.println("<h1>Information for URL: " + urlPath + "</h1>");
-                    out.println("<ul>");
-                    out.println("<li>Class Name: " + mapping.getClassName() + "</li>");
-                    out.println("<li>Method Name: " + mapping.getMethodName() + "</li>");
-                    out.println("<li>Method Name: " + result + "</li>");
-                    out.println("</ul>");
-                    out.println("</body>");
-                    out.println("</html>");
-                } else {
-                    out.println("<!DOCTYPE html>");
-                    out.println("<html>");
-                    out.println("<head>");
-                    out.println("<title>No Mapping Found</title>");
-                    out.println("</head>");
-                    out.println("<body>");
-                    out.println("<h1>No method associated with this URL path: " + urlPath + "</h1>");
-                    out.println("</body>");
-                    out.println("</html>");
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            Method method = clazz.getDeclaredMethod(mapping.getMethodName());
+
+            Object result = method.invoke(instance);
+
+            if (result instanceof String) {
+                resp.getWriter().println((String) result);
+            } else if (result instanceof ModelView) {
+                ModelView modelView = (ModelView) result;
+                for (HashMap.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                    req.setAttribute(entry.getKey(), entry.getValue());
                 }
+                RequestDispatcher dispatcher = req.getRequestDispatcher(modelView.getUrl());
+                dispatcher.forward(req, resp);
+            } else {
+                resp.getWriter().println("Return type not recognized");
+            }
         } catch (Exception e) {
+            resp.setContentType("text/html;charset=UTF-8");
+            PrintWriter out = resp.getWriter();
             out.println(e.getMessage());
             for (StackTraceElement ste : e.getStackTrace()) {
                 out.println(ste);
             }
         }
     }
-    
 }
