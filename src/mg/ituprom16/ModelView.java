@@ -10,6 +10,9 @@ public class ModelView {
         this.url = url;
     }
 
+    public ModelView()
+    {}
+
     public String getUrl() {
         return url;
     }
@@ -23,6 +26,6 @@ public class ModelView {
     }
 
     public void addObject(String key, Object value) {
-        data.put(key, value);
+        this.getData().put(key, value);
     }
 }
