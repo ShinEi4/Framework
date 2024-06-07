@@ -10,12 +10,10 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.ArrayList;
 
 public class FrontController extends HttpServlet {
 
     private HashMap<String, Mapping> urlMappings = new HashMap<>();
-    private ArrayList<String> exceptions = new ArrayList<>();
 
     @Override
     public void init() throws ServletException {
@@ -23,8 +21,7 @@ public class FrontController extends HttpServlet {
         try {
             getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
         } catch (Exception e) {
-            exceptions.add(e.getMessage());
-            e.printStackTrace();
+            throw new ServletException("Erreur lors de l'initialisation des contrôleurs : " + e.getMessage(), e);
         }
     }
 
@@ -61,7 +58,7 @@ public class FrontController extends HttpServlet {
                             Get getAnnotation = method.getAnnotation(Get.class);
                             String url = getAnnotation.value();
                             if (urlMappings.containsKey(url)) {
-                                exceptions.add("Deux fonctions mappées pour l'URL: " + url);
+                                throw new Exception("Deux fonctions mappées pour l'URL: " + url);
                             } else {
                                 Mapping mapping = new Mapping(classe.getName(), method.getName());
                                 urlMappings.put(url, mapping);
@@ -78,12 +75,11 @@ public class FrontController extends HttpServlet {
         String urlPath = req.getRequestURI().substring(contextPath.length());
 
         if (urlPath == null || urlPath.isEmpty()) {
-            resp.getWriter().println("Aucun url trouve");
-            return;
+            throw new ServletException("Aucun url trouve");
         }
 
         if (!urlMappings.containsKey(urlPath)) {
-            exceptions.add("Aucun mapping pour l'url actuel: " + urlPath);
+            throw new ServletException("Aucun mapping pour l'url actuel: " + urlPath);
         } else {
             Mapping mapping = urlMappings.get(urlPath);
 
@@ -104,24 +100,11 @@ public class FrontController extends HttpServlet {
                     RequestDispatcher dispatcher = req.getRequestDispatcher(modelView.getUrl());
                     dispatcher.forward(req, resp);
                 } else {
-                    exceptions.add("Type de retour non reconnu pour l'URL: " + urlPath);
+                    throw new ServletException("Type de retour non reconnu pour l'URL: " + urlPath);
                 }
             } catch (Exception e) {
-                exceptions.add("Erreur lors de l'invocation de la méthode: " + e.getMessage());
-                e.printStackTrace();
+                throw new ServletException("Erreur lors de l'invocation de la méthode: " + e.getMessage(), e);
             }
-        }
-
-        if (!exceptions.isEmpty()) {
-            resp.setContentType("text/html;charset=UTF-8");
-            PrintWriter out = resp.getWriter();
-            out.println("<html><body>");
-            out.println("<h3>Erreurs:</h3>");
-            for (String exception : exceptions) {
-                out.println("<p>" + exception + "</p>");
-            }
-            out.println("</body></html>");
-            exceptions.clear();
         }
     }
 }
