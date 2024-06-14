@@ -8,8 +8,13 @@ import mg.ituprom16.ModelView;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.ModuleLayer.Controller;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.Map;
 
 public class FrontController extends HttpServlet {
 
@@ -69,42 +74,86 @@ public class FrontController extends HttpServlet {
             }
         }
     }
-
-    protected void processRequest(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String contextPath = req.getContextPath();
-        String urlPath = req.getRequestURI().substring(contextPath.length());
-
-        if (urlPath == null || urlPath.isEmpty()) {
-            throw new ServletException("Aucun url trouve");
-        }
-
-        if (!urlMappings.containsKey(urlPath)) {
-            throw new ServletException("Aucun mapping pour l'url actuel: " + urlPath);
-        } else {
-            Mapping mapping = urlMappings.get(urlPath);
-
-            try {
-                Class<?> clazz = Class.forName(mapping.getClassName());
-                Object instance = clazz.getDeclaredConstructor().newInstance();
-                Method method = clazz.getDeclaredMethod(mapping.getMethodName());
-
-                Object result = method.invoke(instance);
-
-                if (result instanceof String) {
-                    resp.getWriter().println((String) result);
-                } else if (result instanceof ModelView) {
-                    ModelView modelView = (ModelView) result;
-                    for (HashMap.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                        req.setAttribute(entry.getKey(), entry.getValue());
-                    }
-                    RequestDispatcher dispatcher = req.getRequestDispatcher(modelView.getUrl());
-                    dispatcher.forward(req, resp);
-                } else {
-                    throw new ServletException("Type de retour non reconnu pour l'URL: " + urlPath);
-                }
-            } catch (Exception e) {
-                throw new ServletException("Erreur lors de l'invocation de la méthode: " + e.getMessage(), e);
+    protected Object invokeMethod(HttpServletRequest request, String className, String methodName, String[] parameterTypeNames)
+            throws IOException, NoSuchMethodException {
+        Object returnValue = null;
+        try {
+            Class<?> clazz = Class.forName(className);
+            Class<?>[] parameterTypes = new Class<?>[parameterTypeNames.length];
+            for (int i = 0; i < parameterTypeNames.length; i++) {
+                parameterTypes[i] = Class.forName(parameterTypeNames[i]);
             }
+            Method method = clazz.getDeclaredMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+
+            Parameter[] methodParams = method.getParameters();
+            Object[] args = new Object[methodParams.length];
+
+            Enumeration<String> params = request.getParameterNames();
+            Map<String, String> paramMap = new HashMap<>();
+
+            while (params.hasMoreElements()) {
+                String paramName = params.nextElement();
+                paramMap.put(paramName, request.getParameter(paramName));
+            }
+            for (int i = 0; i < methodParams.length; i++) {
+                if (methodParams[i].isAnnotationPresent(Param.class)) {
+                    String paramName = methodParams[i].getAnnotation(Param.class).name();
+                    String paramValue = paramMap.get(paramName);
+                    args[i] = paramValue;
+                } else {
+                    args[i] = null;
+                }
+            }
+
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            returnValue = method.invoke(instance, args);
+
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException
+                | NoSuchMethodException | SecurityException e) {
+            e.printStackTrace();
+        }
+        return returnValue;
+    }
+
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+
+        String url = request.getRequestURI().substring(request.getContextPath().length());
+        
+        Mapping mapping = urlMappings.get(url);
+
+        if (mapping != null) {
+            try {
+                Object returnValue = invokeMethod(request, mapping.getClassName(), mapping.getMethodName(), mapping.getParameterTypes());
+
+                if (returnValue instanceof String) {
+                    try (PrintWriter out = response.getWriter()) {
+                        out.println("<p>Contenu de la méthode <strong>" + mapping.methodToString() + "</strong> : " + (String) returnValue + "</p>");
+                    }
+                } else if (returnValue instanceof ModelView) {
+                    ModelView modelView = (ModelView) returnValue;
+                    String viewUrl = modelView.getUrl();
+                    HashMap<String, Object> data = modelView.getData();
+
+                    for (Map.Entry<String, Object> entry : data.entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
+                    dispatcher.forward(request, response);
+                } else if (returnValue == null) {
+                    throw new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL");
+                } else {
+                    throw new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework");
+                }
+
+            } catch (NoSuchMethodException | IOException e) {
+                throw new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e);
+            }
+
+        } else {
+            throw new ServletException("Pas de méthode Get associée à l'URL: \"" + url + "\"");
         }
     }
 }
