@@ -4,11 +4,13 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import mg.ituprom16.Mapping;
 import mg.ituprom16.ModelView;
+import mg.ituprom16.annotations.ParamAttribut;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.ModuleLayer.Controller;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -48,24 +50,24 @@ public class FrontController extends HttpServlet {
         String bin_path = "WEB-INF/classes/" + packagename.replace(".", "/");
         bin_path = getServletContext().getRealPath(bin_path);
 
-        File b = new File(bin_path);
-        if (!b.exists()) {
+        File packageDir = new File(bin_path);
+        if (!packageDir.exists()) {
             throw new Exception("Le package spécifié n'existe pas.");
         }
 
-        for (File fichier : b.listFiles()) {
-            if (fichier.isFile() && fichier.getName().endsWith(".class")) {
-                String className = packagename + "." + fichier.getName().replace(".class", "");
-                Class<?> classe = Class.forName(className);
-                if (classe.isAnnotationPresent(Controller.class)) {
-                    for (Method method : classe.getDeclaredMethods()) {
-                        if (method.isAnnotationPresent(Get.class)) {
-                            Get getAnnotation = method.getAnnotation(Get.class);
+        for (File file : packageDir.listFiles()) {
+            if (file.isFile() && file.getName().endsWith(".class")) {
+                String className = packagename + "." + file.getName().replace(".class", "");
+                Class<?> clazz = Class.forName(className);
+                if (clazz.isAnnotationPresent(AnnotationController.class)) {
+                    for (Method method : clazz.getDeclaredMethods()) {
+                        if (method.isAnnotationPresent(GetController.class)) {
+                            GetController getAnnotation = method.getAnnotation(GetController.class);
                             String url = getAnnotation.value();
                             if (urlMappings.containsKey(url)) {
                                 throw new Exception("Deux fonctions mappées pour l'URL: " + url);
                             } else {
-                                Mapping mapping = new Mapping(classe.getName(), method.getName());
+                                Mapping mapping = new Mapping(clazz.getName(), method.getName(), getParameterTypes(method));
                                 urlMappings.put(url, mapping);
                             }
                         }
@@ -74,6 +76,16 @@ public class FrontController extends HttpServlet {
             }
         }
     }
+
+    private String[] getParameterTypes(Method method) {
+        Class<?>[] paramTypes = method.getParameterTypes();
+        String[] paramTypeNames = new String[paramTypes.length];
+        for (int i = 0; i < paramTypes.length; i++) {
+            paramTypeNames[i] = paramTypes[i].getName();
+        }
+        return paramTypeNames;
+    }
+    
     protected Object invokeMethod(HttpServletRequest request, String className, String methodName, String[] parameterTypeNames)
             throws IOException, NoSuchMethodException {
         Object returnValue = null;
@@ -101,6 +113,23 @@ public class FrontController extends HttpServlet {
                     String paramName = methodParams[i].getAnnotation(Param.class).name();
                     String paramValue = paramMap.get(paramName);
                     args[i] = paramValue;
+                } else if (methodParams[i].isAnnotationPresent(ParamObjet.class)) {
+                    Class<?> paramType = methodParams[i].getType();
+                    Object paramObject = paramType.getDeclaredConstructor().newInstance();
+                    Field[] fields = paramType.getDeclaredFields();
+                    for (Field field : fields) {
+                        String fieldName = field.getName();
+                        if (field.isAnnotationPresent(ParamAttribut.class)) {
+                            String paramAttributName = field.getAnnotation(ParamAttribut.class).name();
+                            if (!paramAttributName.isEmpty()) {
+                                fieldName = paramAttributName;
+                            }
+                        }
+                        field.setAccessible(true);
+                        String paramValue = paramMap.get(fieldName);
+                        field.set(paramObject, paramValue);
+                    }
+                    args[i] = paramObject;
                 } else {
                     args[i] = null;
                 }
