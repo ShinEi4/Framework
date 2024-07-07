@@ -2,25 +2,24 @@ package mg.ituprom16.controller;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
-import mg.ituprom16.Mapping;
-import mg.ituprom16.ModelView;
-import mg.ituprom16.annotations.ParamAttribut;
+import mg.ituprom16.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.lang.ModuleLayer.Controller;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class FrontController extends HttpServlet {
 
     private HashMap<String, Mapping> urlMappings = new HashMap<>();
+    private List<Exception> exceptions = new ArrayList<>();
 
     @Override
     public void init() throws ServletException {
@@ -28,18 +27,26 @@ public class FrontController extends HttpServlet {
         try {
             getListeControlleurs(getServletContext().getInitParameter("controllerPackage"));
         } catch (Exception e) {
-            throw new ServletException("Erreur lors de l'initialisation des contrôleurs : " + e.getMessage(), e);
+            exceptions.add(new ServletException("Erreur lors de l'initialisation des contrôleurs : " + e.getMessage(), e));
         }
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        processRequest(req, resp);
+        try {
+            processRequest(req, resp);
+        } catch (Exception e) {
+            handleExceptions(req, resp, e);
+        }
     }
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        processRequest(req, resp);
+        try {
+            processRequest(req, resp);
+        } catch (Exception e) {
+            handleExceptions(req, resp, e);
+        }
     }
 
     private void getListeControlleurs(String packagename) throws Exception {
@@ -65,14 +72,24 @@ public class FrontController extends HttpServlet {
                             GetController getAnnotation = method.getAnnotation(GetController.class);
                             String url = getAnnotation.value();
                             if (urlMappings.containsKey(url)) {
-                                throw new Exception("Deux fonctions mappées pour l'URL: " + url);
+                                exceptions.add(new Exception("Duplication d'URL trouvée: " + url + " est déjà liée à " + urlMappings.get(url)));
                             } else {
+                                // Vérifier si chaque paramètre de la méthode a l'annotation @Param
+                                verifMethodParameter(method);
                                 Mapping mapping = new Mapping(clazz.getName(), method.getName(), getParameterTypes(method));
                                 urlMappings.put(url, mapping);
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private void verifMethodParameter(Method method) throws Exception {
+        for (Parameter parameter : method.getParameters()) {
+            if (!parameter.isAnnotationPresent(Param.class)) {
+                throw new Exception("ETU002429-Erreur:  \"" + parameter.getName() + "\" de la méthode \"" + method.getName() + "\" dans la classe \"" + method.getDeclaringClass().getName() + "\" n'a pas l'annotation @Param.");
             }
         }
     }
@@ -85,9 +102,9 @@ public class FrontController extends HttpServlet {
         }
         return paramTypeNames;
     }
-    
+
     protected Object invokeMethod(HttpServletRequest request, String className, String methodName, String[] parameterTypeNames)
-            throws IOException, NoSuchMethodException {
+            throws Exception {
         Object returnValue = null;
         try {
             Class<?> clazz = Class.forName(className);
@@ -130,6 +147,8 @@ public class FrontController extends HttpServlet {
                         field.set(paramObject, paramValue);
                     }
                     args[i] = paramObject;
+                } else if (parameterTypes[i] == Session.class) {
+                    args[i] = new Session(request.getSession());
                 } else {
                     args[i] = null;
                 }
@@ -138,9 +157,8 @@ public class FrontController extends HttpServlet {
             Object instance = clazz.getDeclaredConstructor().newInstance();
             returnValue = method.invoke(instance, args);
 
-        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException
-                | NoSuchMethodException | SecurityException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            exceptions.add(e);
         }
         return returnValue;
     }
@@ -149,7 +167,10 @@ public class FrontController extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         String url = request.getRequestURI().substring(request.getContextPath().length());
-        
+        if (url.contains("?")) {
+            url = url.substring(0, url.indexOf("?"));
+        }
+
         Mapping mapping = urlMappings.get(url);
 
         if (mapping != null) {
@@ -172,17 +193,40 @@ public class FrontController extends HttpServlet {
                     RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
                     dispatcher.forward(request, response);
                 } else if (returnValue == null) {
-                    throw new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL");
+                    exceptions.add(new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL"));
                 } else {
-                    throw new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework");
+                    exceptions.add(new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework"));
                 }
 
-            } catch (NoSuchMethodException | IOException e) {
-                throw new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e);
+            } catch (Exception e) {
+                exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e));
             }
 
         } else {
-            throw new ServletException("Pas de méthode Get associée à l'URL: \"" + url + "\"");
+            exceptions.add(new ServletException("Pas de méthode Get associée à l'URL: \"" + url + "\""));
         }
+
+        if (!exceptions.isEmpty()) {
+            handleExceptions(request, response, null);
+        }
+    }
+
+    private void handleExceptions(HttpServletRequest req, HttpServletResponse resp, Exception e) throws IOException {
+        PrintWriter out = resp.getWriter();
+        resp.setContentType("text/html");
+
+        out.println("<html><body>");
+        out.println("<h1>Des erreurs se sont produites:</h1>");
+        out.println("<ul>");
+        for (Exception exception : exceptions) {
+            out.println("<li>" + exception.getMessage() + "</li>");
+            for (StackTraceElement ste : exception.getStackTrace()) {
+                out.println("<li>&emsp;" + ste + "</li>");
+            }
+        }
+        out.println("</ul>");
+        out.println("</body></html>");
+
+        exceptions.clear();
     }
 }
