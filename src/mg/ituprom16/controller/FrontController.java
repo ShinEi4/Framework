@@ -14,6 +14,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
+import com.google.gson.Gson;
 import java.util.List;
 
 public class FrontController extends HttpServlet {
@@ -164,53 +165,66 @@ public class FrontController extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-        response.setContentType("text/html;charset=UTF-8");
-
         String url = request.getRequestURI().substring(request.getContextPath().length());
         if (url.contains("?")) {
             url = url.substring(0, url.indexOf("?"));
         }
-
+    
         Mapping mapping = urlMappings.get(url);
-
+        response.setContentType("application/json;charset=UTF-8"); // Change to JSON response type
+    
         if (mapping != null) {
             try {
                 Object returnValue = invokeMethod(request, mapping.getClassName(), mapping.getMethodName(), mapping.getParameterTypes());
-
-                if (returnValue instanceof String) {
-                    try (PrintWriter out = response.getWriter()) {
-                        out.println("<p>Contenu de la méthode <strong>" + mapping.methodToString() + "</strong> : " + (String) returnValue + "</p>");
+    
+                // Vérifiez si la méthode a l'annotation RestAPI
+                if (returnValue.getClass().isAnnotationPresent(RestAPI.class)) {
+                    Gson gson = new Gson();
+                    if (returnValue instanceof ModelView) {
+                        // Si c'est un ModelView, sérialisez uniquement l'attribut "data"
+                        ModelView modelView = (ModelView) returnValue;
+                        String json = gson.toJson(modelView.getData());
+                        response.getWriter().write(json);
+                    } else {
+                        // Sinon, sérialisez directement la valeur de retour
+                        String json = gson.toJson(returnValue);
+                        response.getWriter().write(json);
                     }
-                } else if (returnValue instanceof ModelView) {
-                    ModelView modelView = (ModelView) returnValue;
-                    String viewUrl = modelView.getUrl();
-                    HashMap<String, Object> data = modelView.getData();
-
-                    for (Map.Entry<String, Object> entry : data.entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
-                    }
-
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
-                    dispatcher.forward(request, response);
-                } else if (returnValue == null) {
-                    exceptions.add(new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL"));
                 } else {
-                    exceptions.add(new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework"));
+                    // Comportement standard si ce n'est pas une API REST
+                    if (returnValue instanceof String) {
+                        try (PrintWriter out = response.getWriter()) {
+                            out.println("<p>Contenu de la méthode <strong>" + mapping.methodToString() + "</strong> : " + (String) returnValue + "</p>");
+                        }
+                    } else if (returnValue instanceof ModelView) {
+                        ModelView modelView = (ModelView) returnValue;
+                        String viewUrl = modelView.getUrl();
+                        HashMap<String, Object> data = modelView.getData();
+    
+                        for (Map.Entry<String, Object> entry : data.entrySet()) {
+                            request.setAttribute(entry.getKey(), entry.getValue());
+                        }
+    
+                        RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
+                        dispatcher.forward(request, response);
+                    } else if (returnValue == null) {
+                        exceptions.add(new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL"));
+                    } else {
+                        exceptions.add(new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework"));
+                    }
                 }
-
             } catch (Exception e) {
                 exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e));
             }
-
         } else {
             exceptions.add(new ServletException("Pas de méthode Get associée à l'URL: \"" + url + "\""));
         }
-
+    
         if (!exceptions.isEmpty()) {
             handleExceptions(request, response, null);
         }
     }
-
+    
     private void handleExceptions(HttpServletRequest req, HttpServletResponse resp, Exception e) throws IOException {
         PrintWriter out = resp.getWriter();
         resp.setContentType("text/html");
