@@ -4,11 +4,13 @@ public class Mapping {
     String className;
     String methodName;
     String[] parameterTypes;
+    String verb;
 
-    public Mapping(String className, String methodName, String[] parameterTypes) {
+    public Mapping(String className, String methodName, String[] parameterTypes,String  verb) {
         this.setClassName(className);
         this.setMethodName(methodName);
         this.setParameterTypes(parameterTypes);
+        this.setVerb(verb);
     }
 
     public String getClassName() {
@@ -33,6 +35,14 @@ public class Mapping {
 
     public void setParameterTypes(String[] parameterTypes) {
         this.parameterTypes = parameterTypes;
+    }
+
+    public String getVerb() {
+        return verb;
+    }
+
+    public void setVerb(String verb) {
+        this.verb = verb;
     }
 
     public String methodToString() {

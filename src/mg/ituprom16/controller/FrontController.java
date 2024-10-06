@@ -67,19 +67,28 @@ public class FrontController extends HttpServlet {
             if (file.isFile() && file.getName().endsWith(".class")) {
                 String className = packagename + "." + file.getName().replace(".class", "");
                 Class<?> clazz = Class.forName(className);
+
                 if (clazz.isAnnotationPresent(AnnotationController.class)) {
                     for (Method method : clazz.getDeclaredMethods()) {
-                        if (method.isAnnotationPresent(GetController.class)) {
-                            GetController getAnnotation = method.getAnnotation(GetController.class);
-                            String url = getAnnotation.value();
-                            if (urlMappings.containsKey(url)) {
-                                exceptions.add(new Exception("Duplication d'URL trouvée: " + url + " est déjà liée à " + urlMappings.get(url)));
-                            } else {
-                                // Vérifier si chaque paramètre de la méthode a l'annotation @Param
-                                verifMethodParameter(method);
-                                Mapping mapping = new Mapping(clazz.getName(), method.getName(), getParameterTypes(method));
-                                urlMappings.put(url, mapping);
-                            }
+                        String url = null;
+                        String verb = "GET";
+
+                        if (method.isAnnotationPresent(GET.class)) {
+                            url = method.getAnnotation(GET.class).value();
+                            verb = "GET";
+                        } else if (method.isAnnotationPresent(POST.class)) {
+                            url = method.getAnnotation(POST.class).value();
+                            verb = "POST";
+                        } else {
+                            throw new Exception("La méthode " + method.getName() + " doit avoir soit @GET soit @POST.");
+                        }
+    
+                        if (urlMappings.containsKey(url)) {
+                            exceptions.add(new Exception("Duplication d'URL trouvée: " + url + " est déjà liée à " + urlMappings.get(url)));
+                        } else {
+                            verifMethodParameter(method);
+                            Mapping mapping = new Mapping(clazz.getName(), method.getName(), getParameterTypes(method), verb);
+                            urlMappings.put(url, mapping);
                         }
                     }
                 }
@@ -171,27 +180,31 @@ public class FrontController extends HttpServlet {
         }
     
         Mapping mapping = urlMappings.get(url);
-        response.setContentType("application/json;charset=UTF-8"); // Change to JSON response type
+        response.setContentType("application/json;charset=UTF-8"); // Réponse JSON par défaut
     
         if (mapping != null) {
+            // Récupération du verbe HTTP (GET ou POST)
+            String httpVerb = request.getMethod();
+    
+            // Vérification que le verbe HTTP correspond à celui attendu (GET ou POST)
+            if (!httpVerb.equals(mapping.getVerb())) {
+                throw new ServletException("Mauvais type de requête : l'URL " + url + " accepte uniquement " + mapping.getVerb() + ", mais a reçu " + httpVerb);
+            }
+    
             try {
                 Object returnValue = invokeMethod(request, mapping.getClassName(), mapping.getMethodName(), mapping.getParameterTypes());
     
-                // Vérifiez si la méthode a l'annotation RestAPI
                 if (returnValue.getClass().isAnnotationPresent(RestAPI.class)) {
                     Gson gson = new Gson();
                     if (returnValue instanceof ModelView) {
-                        // Si c'est un ModelView, sérialisez uniquement l'attribut "data"
                         ModelView modelView = (ModelView) returnValue;
                         String json = gson.toJson(modelView.getData());
                         response.getWriter().write(json);
                     } else {
-                        // Sinon, sérialisez directement la valeur de retour
                         String json = gson.toJson(returnValue);
                         response.getWriter().write(json);
                     }
                 } else {
-                    // Comportement standard si ce n'est pas une API REST
                     if (returnValue instanceof String) {
                         try (PrintWriter out = response.getWriter()) {
                             out.println("<p>Contenu de la méthode <strong>" + mapping.methodToString() + "</strong> : " + (String) returnValue + "</p>");
@@ -217,13 +230,14 @@ public class FrontController extends HttpServlet {
                 exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e));
             }
         } else {
-            exceptions.add(new ServletException("Pas de méthode Get associée à l'URL: \"" + url + "\""));
+            exceptions.add(new ServletException("Pas de méthode associée à l'URL: \"" + url + "\""));
         }
     
         if (!exceptions.isEmpty()) {
             handleExceptions(request, response, null);
         }
     }
+    
     
     private void handleExceptions(HttpServletRequest req, HttpServletResponse resp, Exception e) throws IOException {
         PrintWriter out = resp.getWriter();
