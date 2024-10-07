@@ -54,47 +54,52 @@ public class FrontController extends HttpServlet {
         if (packagename == null || packagename.isEmpty()) {
             throw new Exception("Le nom du package est vide ou null.");
         }
-
+    
         String bin_path = "WEB-INF/classes/" + packagename.replace(".", "/");
         bin_path = getServletContext().getRealPath(bin_path);
-
+    
         File packageDir = new File(bin_path);
         if (!packageDir.exists()) {
             throw new Exception("Le package spécifié n'existe pas.");
         }
-
+    
         for (File file : packageDir.listFiles()) {
             if (file.isFile() && file.getName().endsWith(".class")) {
                 String className = packagename + "." + file.getName().replace(".class", "");
                 Class<?> clazz = Class.forName(className);
-
+    
                 if (clazz.isAnnotationPresent(AnnotationController.class)) {
+                    Mapping currentMapping = null;
+    
                     for (Method method : clazz.getDeclaredMethods()) {
                         String url = null;
                         String verb = "GET";
-
+    
                         if (method.isAnnotationPresent(GET.class)) {
                             url = method.getAnnotation(GET.class).value();
                             verb = "GET";
                         } else if (method.isAnnotationPresent(POST.class)) {
                             url = method.getAnnotation(POST.class).value();
                             verb = "POST";
-                        } else {
-                            throw new Exception("La méthode " + method.getName() + " doit avoir soit @GET soit @POST.");
+                        } 
+                        currentMapping = urlMappings.get(url);
+                        if (currentMapping == null) {
+                            currentMapping = new Mapping(clazz.getName(), new VerbAction[0]);
+                            urlMappings.put(url, currentMapping);
                         }
+                        verifMethodParameter(method);
     
-                        if (urlMappings.containsKey(url)) {
-                            exceptions.add(new Exception("Duplication d'URL trouvée: " + url + " est déjà liée à " + urlMappings.get(url)));
-                        } else {
-                            verifMethodParameter(method);
-                            Mapping mapping = new Mapping(clazz.getName(), method.getName(), getParameterTypes(method), verb);
-                            urlMappings.put(url, mapping);
-                        }
+                        VerbAction verbAction = new VerbAction(verb, method.getName(), getParameterTypes(method));
+                        VerbAction[] updatedActions = new VerbAction[currentMapping.getActions().length + 1];
+                        System.arraycopy(currentMapping.getActions(), 0, updatedActions, 0, currentMapping.getActions().length);
+                        updatedActions[updatedActions.length - 1] = verbAction;
+                        currentMapping.setActions(updatedActions);
                     }
                 }
             }
         }
     }
+    
 
     private void verifMethodParameter(Method method) throws Exception {
         for (Parameter parameter : method.getParameters()) {
@@ -185,14 +190,21 @@ public class FrontController extends HttpServlet {
         if (mapping != null) {
             // Récupération du verbe HTTP (GET ou POST)
             String httpVerb = request.getMethod();
+            VerbAction verbAction = null;
     
-            // Vérification que le verbe HTTP correspond à celui attendu (GET ou POST)
-            if (!httpVerb.equals(mapping.getVerb())) {
-                throw new ServletException("Mauvais type de requête : l'URL " + url + " accepte uniquement " + mapping.getVerb() + ", mais a reçu " + httpVerb);
+            for (VerbAction action : mapping.getActions()) {
+                if (action.getVerb().equals(httpVerb)) {
+                    verbAction = action;
+                    break;
+                }
+            }
+    
+            if (verbAction == null) {
+                throw new ServletException("Mauvais type de requête : l'URL " + url + " n'accepte pas le verbe " + httpVerb);
             }
     
             try {
-                Object returnValue = invokeMethod(request, mapping.getClassName(), mapping.getMethodName(), mapping.getParameterTypes());
+                Object returnValue = invokeMethod(request, mapping.getClassName(), verbAction.getMethodName(), verbAction.getParameterTypes());
     
                 if (returnValue.getClass().isAnnotationPresent(RestAPI.class)) {
                     Gson gson = new Gson();
@@ -207,7 +219,7 @@ public class FrontController extends HttpServlet {
                 } else {
                     if (returnValue instanceof String) {
                         try (PrintWriter out = response.getWriter()) {
-                            out.println("<p>Contenu de la méthode <strong>" + mapping.methodToString() + "</strong> : " + (String) returnValue + "</p>");
+                            out.println("<p>Contenu de la méthode <strong>" + verbAction.methodToString() + "</strong> : " + (String) returnValue + "</p>");
                         }
                     } else if (returnValue instanceof ModelView) {
                         ModelView modelView = (ModelView) returnValue;
@@ -221,13 +233,13 @@ public class FrontController extends HttpServlet {
                         RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
                         dispatcher.forward(request, response);
                     } else if (returnValue == null) {
-                        exceptions.add(new ServletException("La méthode \"" + mapping.methodToString() + "\" retourne une valeur NULL"));
+                        exceptions.add(new ServletException("La méthode \"" + verbAction.methodToString() + "\" retourne une valeur NULL"));
                     } else {
                         exceptions.add(new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework"));
                     }
                 }
             } catch (Exception e) {
-                exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + mapping.methodToString() + "\"", e));
+                exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + verbAction.methodToString() + "\"", e));
             }
         } else {
             exceptions.add(new ServletException("Pas de méthode associée à l'URL: \"" + url + "\""));
@@ -237,6 +249,7 @@ public class FrontController extends HttpServlet {
             handleExceptions(request, response, null);
         }
     }
+    
     
     
     private void handleExceptions(HttpServletRequest req, HttpServletResponse resp, Exception e) throws IOException {
