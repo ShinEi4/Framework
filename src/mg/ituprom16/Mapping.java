@@ -1,16 +1,12 @@
 package mg.ituprom16;
 
 public class Mapping {
-    String className;
-    String methodName;
-    String[] parameterTypes;
-    String verb;
+    private String className;
+    private VerbAction[] actions;
 
-    public Mapping(String className, String methodName, String[] parameterTypes,String  verb) {
-        this.setClassName(className);
-        this.setMethodName(methodName);
-        this.setParameterTypes(parameterTypes);
-        this.setVerb(verb);
+    public Mapping(String className, VerbAction[] actions) {
+        this.className = className;
+        this.actions = actions;
     }
 
     public String getClassName() {
@@ -21,42 +17,20 @@ public class Mapping {
         this.className = className;
     }
 
-    public String getMethodName() {
-        return methodName;
+    public VerbAction[] getActions() {
+        return actions;
     }
 
-    public void setMethodName(String methodName) {
-        this.methodName = methodName;
+    public void setActions(VerbAction[] actions) {
+        this.actions = actions;
     }
 
-    public String[] getParameterTypes() {
-        return parameterTypes;
-    }
-
-    public void setParameterTypes(String[] parameterTypes) {
-        this.parameterTypes = parameterTypes;
-    }
-
-    public String getVerb() {
-        return verb;
-    }
-
-    public void setVerb(String verb) {
-        this.verb = verb;
-    }
-
-    public String methodToString() {
-        StringBuilder methodString = new StringBuilder();
-        methodString.append(methodName).append("(");
-
-        for (int i = 0; i < parameterTypes.length; i++) {
-            methodString.append(parameterTypes[i]);
-            if (i < parameterTypes.length - 1) {
-                methodString.append(", ");
+    public VerbAction findActionByVerb(String verb) {
+        for (VerbAction action : actions) {
+            if (action.getVerb().equalsIgnoreCase(verb)) {
+                return action;
             }
         }
-
-        methodString.append(")");
-        return methodString.toString();
+        return null;
     }
 }
