@@ -187,17 +187,17 @@ public class FrontController extends HttpServlet {
         if (url.contains("?")) {
             url = url.substring(0, url.indexOf("?"));
         }
-
+    
         Mapping mapping = urlMappings.get(url);
         response.setContentType("application/json;charset=UTF-8");
-
+    
         if (mapping != null) {
             String httpVerb = request.getMethod();
             VerbAction verbAction = null;
-
+    
             // Utilisation d'un Set pour éviter les doublons
             Set<VerbAction> actionsSet = new HashSet<>(Arrays.asList(mapping.getActions()));
-
+    
             // Si la taille du Set est différente de celle du tableau, il y a un doublon
             if (actionsSet.size() != mapping.getActions().length) {
                 // Préparation de la réponse avec un statut 500
@@ -205,7 +205,7 @@ public class FrontController extends HttpServlet {
                 response.getWriter().write("{\"error\": \"Conflit : deux méthodes avec le même verb et le même nom sont définies.\"}");
                 return;
             }
-
+    
             // Recherche de l'action correspondant au verbe HTTP
             for (VerbAction action : mapping.getActions()) {
                 if (action.getVerb().equals(httpVerb)) {
@@ -213,17 +213,17 @@ public class FrontController extends HttpServlet {
                     break;
                 }
             }
-
+    
             if (verbAction == null) {
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST); // 400
                 response.getWriter().write("{\"error\": \"Le verbe HTTP " + httpVerb + " n'est pas pris en charge pour cette URL.\"}");
                 return;
             }
-
+    
             try {
                 // Appel de la méthode avec les types de paramètres appropriés
                 Object returnValue = invokeMethod(request, mapping.getClassName(), verbAction.getMethodName(), verbAction.getParameterTypes());
-
+    
                 if (returnValue.getClass().isAnnotationPresent(RestAPI.class)) {
                     Gson gson = new Gson();
                     if (returnValue instanceof ModelView) {
@@ -243,11 +243,11 @@ public class FrontController extends HttpServlet {
                         ModelView modelView = (ModelView) returnValue;
                         String viewUrl = modelView.getUrl();
                         HashMap<String, Object> data = modelView.getData();
-
+    
                         for (Map.Entry<String, Object> entry : data.entrySet()) {
                             request.setAttribute(entry.getKey(), entry.getValue());
                         }
-
+    
                         RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
                         dispatcher.forward(request, response);
                     } else if (returnValue == null) {
@@ -262,10 +262,12 @@ public class FrontController extends HttpServlet {
                 response.getWriter().write("{\"error\": \"Erreur lors de l'invocation de la méthode : " + e.getMessage() + "\"}");
             }
         } else {
+            // Si l'URL ne correspond à aucune action, on retourne une erreur 404 avec un message JSON
             response.setStatus(HttpServletResponse.SC_NOT_FOUND); // 404
             response.getWriter().write("{\"error\": \"Aucune méthode associée à l'URL: " + url + "\"}");
         }
     }
+    
 
     
     
