@@ -12,8 +12,12 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.ArrayList;
+import java.util.Arrays;
+
 import com.google.gson.Gson;
 import java.util.List;
 
@@ -183,29 +187,43 @@ public class FrontController extends HttpServlet {
         if (url.contains("?")) {
             url = url.substring(0, url.indexOf("?"));
         }
-    
+
         Mapping mapping = urlMappings.get(url);
-        response.setContentType("application/json;charset=UTF-8"); // Réponse JSON par défaut
-    
+        response.setContentType("application/json;charset=UTF-8");
+
         if (mapping != null) {
-            // Récupération du verbe HTTP (GET ou POST)
             String httpVerb = request.getMethod();
             VerbAction verbAction = null;
-    
+
+            // Utilisation d'un Set pour éviter les doublons
+            Set<VerbAction> actionsSet = new HashSet<>(Arrays.asList(mapping.getActions()));
+
+            // Si la taille du Set est différente de celle du tableau, il y a un doublon
+            if (actionsSet.size() != mapping.getActions().length) {
+                // Préparation de la réponse avec un statut 500
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR); // 500
+                response.getWriter().write("{\"error\": \"Conflit : deux méthodes avec le même verb et le même nom sont définies.\"}");
+                return;
+            }
+
+            // Recherche de l'action correspondant au verbe HTTP
             for (VerbAction action : mapping.getActions()) {
                 if (action.getVerb().equals(httpVerb)) {
                     verbAction = action;
                     break;
                 }
             }
-    
+
             if (verbAction == null) {
-                throw new ServletException("Mauvais type de requête : l'URL " + url + " n'accepte pas le verbe " + httpVerb);
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST); // 400
+                response.getWriter().write("{\"error\": \"Le verbe HTTP " + httpVerb + " n'est pas pris en charge pour cette URL.\"}");
+                return;
             }
-    
+
             try {
+                // Appel de la méthode avec les types de paramètres appropriés
                 Object returnValue = invokeMethod(request, mapping.getClassName(), verbAction.getMethodName(), verbAction.getParameterTypes());
-    
+
                 if (returnValue.getClass().isAnnotationPresent(RestAPI.class)) {
                     Gson gson = new Gson();
                     if (returnValue instanceof ModelView) {
@@ -225,30 +243,30 @@ public class FrontController extends HttpServlet {
                         ModelView modelView = (ModelView) returnValue;
                         String viewUrl = modelView.getUrl();
                         HashMap<String, Object> data = modelView.getData();
-    
+
                         for (Map.Entry<String, Object> entry : data.entrySet()) {
                             request.setAttribute(entry.getKey(), entry.getValue());
                         }
-    
+
                         RequestDispatcher dispatcher = request.getRequestDispatcher(viewUrl);
                         dispatcher.forward(request, response);
                     } else if (returnValue == null) {
-                        exceptions.add(new ServletException("La méthode \"" + verbAction.methodToString() + "\" retourne une valeur NULL"));
+                        throw new ServletException("La méthode \"" + verbAction.methodToString() + "\" retourne une valeur NULL");
                     } else {
-                        exceptions.add(new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework"));
+                        throw new ServletException("Le type de retour de l'objet \"" + returnValue.getClass().getName() + "\" n'est pas pris en charge par le Framework");
                     }
                 }
             } catch (Exception e) {
-                exceptions.add(new ServletException("Erreur lors de l'invocation de la méthode \"" + verbAction.methodToString() + "\"", e));
+                // Préparer la réponse en cas d'erreur interne
+                response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR); // 500
+                response.getWriter().write("{\"error\": \"Erreur lors de l'invocation de la méthode : " + e.getMessage() + "\"}");
             }
         } else {
-            exceptions.add(new ServletException("Pas de méthode associée à l'URL: \"" + url + "\""));
-        }
-    
-        if (!exceptions.isEmpty()) {
-            handleExceptions(request, response, null);
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND); // 404
+            response.getWriter().write("{\"error\": \"Aucune méthode associée à l'URL: " + url + "\"}");
         }
     }
+
     
     
     
